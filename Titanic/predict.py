@@ -3,6 +3,8 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import accuracy_score
+from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
 
 train = pd.read_csv(r'data\train.csv')
 test = pd.read_csv(r'data\test.csv')
@@ -33,7 +35,13 @@ fix_test = test[['Pclass','Sex','Age','SibSp','Parch','Fare']]
 
 X_train, X_test, y_train, y_test = train_test_split(X,y, test_size=0.33, random_state=42)
 
-classifier = DecisionTreeClassifier(max_depth=3)
+#classifier = DecisionTreeClassifier(max_depth=3)
+#classifier.fit(X_train, y_train)
+
+#svmclassifier = SVC()
+#svmclassifier.fit(X_train, y_train)
+
+classifier = RandomForestClassifier(max_depth=5, random_state=0)
 classifier.fit(X_train, y_train)
 
 print ("Training accuracy :",accuracy_score(y_train,classifier.predict(X_train)))
