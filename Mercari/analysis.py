@@ -72,7 +72,7 @@ def compute_tf_idf(description):
     to be fixed
     '''
     description = str(description)
-    description.translate(string.punctuation)
+    description.translate(str.maketrans("","",string.punctuation))
     
 def tf_idf(dataset):
     '''
