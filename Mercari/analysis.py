@@ -73,6 +73,16 @@ def compute_tf_idf(description):
     '''
     description = str(description)
     description.translate(str.maketrans("","",string.punctuation))
+    tfidf_sum=0
+    words_count=0
+    for w in description.lower().split():
+        words_count += 1
+        if w in tfidf_dict:
+            tfidf_sum += tfidf_dict[w]
+    if words_count > 0:
+        return tfidf_sum/words_count
+    else:
+        return 0
     
 def tf_idf(dataset):
     '''
@@ -80,9 +90,10 @@ def tf_idf(dataset):
     '''
     tfidf = TfidfVectorizer(min_df=5, strip_accents='unicode', \
     lowercase=True, analyzer='word', token_pattern=r'\w+', ngram_range=(1,3), \
-    use_idf=True, smooth_idf=True, subliner_tf=True, stop_words='english')
+    use_idf=True, smooth_idf=True, sublinear_tf=True, stop_words='english')
     tfidf.fit_transform(dataset['item_description'].apply(str))
     tfidf_dict = dict(zip(tfidf.get_feature_names(), tfidf.idf_))
+    print(tfidf_dict)
     
 
     
@@ -91,8 +102,9 @@ def main():
     df_test = pd.read_csv(r'.\test.tsv\test_small.tsv', sep='\t')
 #    check_price_layout(df_train)
 #    check_price_shipping(df_train)
-#   check_desc_word(df_train)
-    show_description_length(df_train,df_test)
+#    check_desc_word(df_train)
+#    show_description_length(df_train,df_test)
+    tf_idf(df_train)
     
 if __name__ == '__main__':
     main()
