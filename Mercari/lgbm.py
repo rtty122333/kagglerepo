@@ -39,16 +39,16 @@ def to_categorical(dataset):
 def main():
     start_time = time.time()
 
-    train = pd.read_table(r'.\train.tsv\train.tsv', engine='c')
-    test = pd.read_table(r'.\test.tsv\test.tsv', engine='c')
+    train = pd.read_table(r'.\data\train.tsv\train_small.tsv', engine='c')
+    test = pd.read_table(r'.\data\test.tsv\test_small.tsv', engine='c')
     print('[{}] Finished to load data'.format(time.time() - start_time))
     print('Train shape: ', train.shape)
     print('Test shape: ', test.shape)
 
     nrow_train = train.shape[0]
     y = np.log1p(train["price"])
-    merge: pd.DataFrame = pd.concat([train, test])
-    submission: pd.DataFrame = test[['test_id']]
+    merge = pd.DataFrame(pd.concat([train, test]))
+    submission = test[['test_id']]
 
     del train
     del test
@@ -64,7 +64,9 @@ def main():
     print('[{}] Finished to convert categorical'.format(time.time() - start_time))
 
     cv = CountVectorizer(min_df=NAME_MIN_DF)
-    X_name = cv.fit_transform(merge['name'])
+    X_name = cv.fit_transform(merge['name']).todense()
+    print(cv.vocabulary_)
+    print('X_name {}'.format(len(X_name)))
     print('[{}] Finished count vectorize `name`'.format(time.time() - start_time))
 
     cv = CountVectorizer()
@@ -86,6 +88,7 @@ def main():
     print('[{}] Finished to get dummies on `item_condition_id` and `shipping`'.format(time.time() - start_time))
 
     sparse_merge = hstack((X_dummies, X_description, X_brand, X_category, X_name)).tocsr()
+    print('Shape after hstack: {}'.format(sparse_merge.shape))
     print('[{}] Finished to create sparse merge'.format(time.time() - start_time))
 
     X = sparse_merge[:nrow_train]
