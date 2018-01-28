@@ -39,8 +39,8 @@ def to_categorical(dataset):
 def main():
     start_time = time.time()
 
-    train = pd.read_table(r'.\data\train.tsv\train_small.tsv', engine='c')
-    test = pd.read_table(r'.\data\test.tsv\test_small.tsv', engine='c')
+    train = pd.read_table(r'.\train.tsv\train_small.tsv', engine='c')
+    test = pd.read_table(r'.\test.tsv\test_small.tsv', engine='c')
     print('[{}] Finished to load data'.format(time.time() - start_time))
     print('Train shape: ', train.shape)
     print('Test shape: ', test.shape)
@@ -66,7 +66,7 @@ def main():
     cv = CountVectorizer(min_df=NAME_MIN_DF)
     X_name = cv.fit_transform(merge['name']).todense()
     print(cv.vocabulary_)
-    print('X_name {}'.format(len(X_name)))
+#    print('X_name {}'.format(X_name))
     print('[{}] Finished count vectorize `name`'.format(time.time() - start_time))
 
     cv = CountVectorizer()
@@ -78,11 +78,13 @@ def main():
                          stop_words='english')
     X_description = tv.fit_transform(merge['item_description'])
     print('[{}] Finished TFIDF vectorize `item_description`'.format(time.time() - start_time))
+#    print('X_description {}'.format(X_description))
 
     lb = LabelBinarizer(sparse_output=True)
     X_brand = lb.fit_transform(merge['brand_name'])
     print('[{}] Finished label binarize `brand_name`'.format(time.time() - start_time))
-
+#    print('X_brand {} '.format(X_brand))
+'''
     X_dummies = csr_matrix(pd.get_dummies(merge[['item_condition_id', 'shipping']],
                                           sparse=True).values)
     print('[{}] Finished to get dummies on `item_condition_id` and `shipping`'.format(time.time() - start_time))
@@ -123,6 +125,7 @@ def main():
 
     submission['price'] = np.expm1(preds)
     submission.to_csv("submission_lgbm_ridge_5.csv", index=False)
+'''
 
 if __name__ == '__main__':
     main()
