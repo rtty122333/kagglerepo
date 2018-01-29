@@ -11,9 +11,29 @@ from sklearn.preprocessing import LabelBinarizer
 from sklearn.model_selection import train_test_split, cross_val_score
 import lightgbm as lgb
 
+NUM_BRANDS = 4000
+NUM_CATEGORIES = 1000
+NAME_MIN_DF = 10
+MAX_FEATURES_ITEM_DESCRIPTION = 40000
 
 
+def handle_missing_inplace(dataset):
+    dataset['category_name'].fillna(value='missing', inplace=True)
+    dataset['brand_name'].fillna(value='missing', inplace=True)
+    dataset['item_description'].fillna(value='missing', inplace=True)
 
+
+def cutting(dataset):
+    pop_brand = dataset['brand_name'].value_counts().loc[lambda x: x.index != 'missing'].index[:NUM_BRANDS]
+    dataset.loc[~dataset['brand_name'].isin(pop_brand), 'brand_name'] = 'missing'
+    pop_category = dataset['category_name'].value_counts().loc[lambda x: x.index != 'missing'].index[:NUM_BRANDS]
+    dataset.loc[~dataset['category_name'].isin(pop_category), 'category_name'] = 'missing'
+
+
+def to_categorical(dataset):
+    dataset['category_name'] = dataset['category_name'].astype('category')
+    dataset['brand_name'] = dataset['brand_name'].astype('category')
+    dataset['item_condition_id'] = dataset['item_condition_id'].astype('category')
 
 
 def main():
@@ -21,6 +41,9 @@ def main():
 
     train = pd.read_table(r'.\train.tsv\train.tsv', engine='c')
     test = pd.read_table(r'.\test.tsv\test.tsv', engine='c')
+    print('[{}] Finished to load data'.format(time.time() - start_time))
+    print('Train shape: ', train.shape)
+    print('Test shape: ', test.shape)
 
     nrow_train = train.shape[0]
     y = np.log1p(train["price"])
@@ -31,39 +54,36 @@ def main():
     del test
     gc.collect()
 
-#leave 5000 brands
-    pop_brand = merge['brand_name'].value_counts().loc[lambda x: x.index != 'missing'].index[:3000]
-    merge.loc[~merge['brand_name'].isin(pop_brand), 'brand_name'] = 'missing'
-    pop_category = merge['category_name'].value_counts().loc[lambda x: x.index != 'missing'].index[:3000]
-    merge.loc[~merge['category_name'].isin(pop_category), 'category_name'] = 'missing'
+    handle_missing_inplace(merge)
+    print('[{}] Finished to handle missing'.format(time.time() - start_time))
 
-#change to category
-    merge['category_name'] = merge['category_name'].astype('category')
-    merge['brand_name'] = merge['brand_name'].astype('category')
-    merge['item_condition_id'] = merge['item_condition_id'].astype('category')
+    cutting(merge)
+    print('[{}] Finished to cut'.format(time.time() - start_time))
 
-#deal with missing
-    merge['category_name'].fillna(value='missing', inplace=True)
-    merge['brand_name'].fillna(value='missing', inplace=True)
-    merge['item_description'].fillna(value='missing', inplace=True)
+    to_categorical(merge)
+    print('[{}] Finished to convert categorical'.format(time.time() - start_time))
 
-    cv = CountVectorizer(min_df=10)
-    X_name = cv.fit_transform(merge['name']).todense()
-#    print(cv.vocabulary_)
+    cv = CountVectorizer(min_df=NAME_MIN_DF)
+    X_name = cv.fit_transform(merge['name'])
+    print(cv.vocabulary_)
+#    print('X_name {}'.format(X_name))
+    print('[{}] Finished count vectorize `name`'.format(time.time() - start_time))
 
     cv = CountVectorizer()
     X_category = cv.fit_transform(merge['category_name'])
     print('[{}] Finished count vectorize `category_name`'.format(time.time() - start_time))
 
-    tv = TfidfVectorizer(max_features=35000,
+    tv = TfidfVectorizer(max_features=MAX_FEATURES_ITEM_DESCRIPTION,
                          ngram_range=(1, 3),
                          stop_words='english')
     X_description = tv.fit_transform(merge['item_description'])
     print('[{}] Finished TFIDF vectorize `item_description`'.format(time.time() - start_time))
+#    print('X_description {}'.format(X_description))
 
     lb = LabelBinarizer(sparse_output=True)
     X_brand = lb.fit_transform(merge['brand_name'])
     print('[{}] Finished label binarize `brand_name`'.format(time.time() - start_time))
+#    print('X_brand {} '.format(X_brand))
 
     X_dummies = csr_matrix(pd.get_dummies(merge[['item_condition_id', 'shipping']],
                                           sparse=True).values)
@@ -76,7 +96,10 @@ def main():
     X = sparse_merge[:nrow_train]
     X_test = sparse_merge[nrow_train:]
     
+    #train_X, valid_X, train_y, valid_y = train_test_split(X, y, test_size = 0.1, random_state = 144) 
     d_train = lgb.Dataset(X, label=y)
+    #d_valid = lgb.Dataset(valid_X, label=valid_y, max_bin=8192)
+    #watchlist = [d_train, d_valid]
     
     params = {
         'learning_rate': 0.75,
