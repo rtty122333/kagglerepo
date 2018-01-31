@@ -1,117 +1,102 @@
-# This Python 3 environment comes with many helpful analytics libraries installed
-# It is defined by the kaggle/python docker image: https://github.com/kaggle/docker-python
-# For example, here's several helpful packages to load in 
-
-import gc
-import time
+import lightgbm as lgbm
+from sklearn.metrics import mean_squared_error
+from scipy import sparse as ssp
 import numpy as np
 import pandas as pd
-
-from scipy.sparse import csr_matrix, hstack
-
-from sklearn.linear_model import Ridge
+from sklearn.model_selection import KFold
+from sklearn.pipeline import FeatureUnion
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
-from sklearn.preprocessing import LabelBinarizer
-from sklearn.model_selection import train_test_split, cross_val_score
-import lightgbm as lgb
+from sklearn.metrics import mean_squared_log_error
+from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import OneHotEncoder
+import time
+import re
+import collections
+import gc
 
-# Input data files are available in the "../input/" directory.
-# For example, running this (by clicking run or pressing Shift+Enter) will list the files in the input directory
+def split_cat(text):
+    try:
+        cat_nm=text.split("/")
+        if len(cat_nm)>=3:
+            return cat_nm[0],cat_nm[1],cat_nm[2]
+        if len(cat_nm)==2:
+            return cat_Nm[0],cat_nm[1],'missing'
+        if len(cat_nm)==1:
+            return cat_nm[0],'missing','missing'
+    except: return ("missing", "missing", "missing")
+    
+def handle_missing(dataset):
+    dataset['category_name'].fillna('other', inplace=True)
+    dataset['brand_name'].fillna('missing', inplace=True)
+    dataset['item_description'].fillna('none', inplace=True)
+    
+def handle_nm_word_len(dataset):
+    dataset['nm_word_len']=list(map(lambda x: len(x.split()), dataset['name'].tolist()))
 
-#from subprocess import check_output
-#print(check_output(["ls", "../input"]).decode("utf8"))
+def handle_nm_len(dataset):
+    dataset['nm_len']=list(map(lambda x: len(x),dataset['name'].tolist()))
+    
+def handle_desc_word_len(dataset):
+    dataset['desc_word_len']=list(map(lambda x: len(x.split()), dataset['item_description'].tolist()))
 
-# Any results you write to the current directory are saved as output.
+def handle_desc_len(dataset):
+    dataset['desc_len']=list(map(lambda x: len(x), dataset['item_description'].tolist()))
 
-def cut_brand(dataset):
-    pop_brand = dataset['brand_name'].value_counts().loc[lambda x: x.index != 'missing'].index[:4000]
-    dataset.loc[~dataset['brand_name'].isin(pop_brand), 'brand_name'] = 'missing'
-    pop_category = dataset['category_name'].value_counts().loc[lambda x: x.index != 'missing'].index[:4000]
-    dataset.loc[~dataset['category_name'].isin(pop_category), 'category_name'] = 'missing'
-
+    
+def handle_category(dataset):
+    dataset['subcat_0'], dataset['subcat_1'], dataset['subcat_2'] = \
+        zip(*dataset['category_name'].apply(lambda x: split_cat(x)))
 def main():
     start_time = time.time()
-
-    train = pd.read_table(r'../input/train.tsv', engine='c')
-    test = pd.read_table(r'../input/test.tsv', engine='c')
-
+    #  stop-word, can add any wording I want to replace
+    stopwords=set(['i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', 
+                'your', 'yours', 'yourself', 'yourselves', 'he', 'him', 'his', 'himself', 
+                'she', 'her', 'hers', 'herself', 'it', 'its', 'itself', 'they', 'them', 'their',
+                'theirs', 'themselves', 'what', 'which', 'who', 'whom', 'this', 'that', 'these', 
+                'those', 'am', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 
+                'had', 'having', 'do', 'does', 'did', 'doing', 'a', 'an', 'the', 'and', 'but', 'if', 
+                'or', 'because', 'as', 'until', 'while', 'of', 'at', 'by', 'for', 'with', 'about', 
+                'against', 'between', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'to',
+                'from', 'up', 'down', 'in', 'out', 'on', 'off', 'over', 'under', 'again', 'further', 'then', 
+                'once', 'here', 'there', 'when', 'where', 'why', 'how', 'all', 'any', 'both', 'each', 'few',
+                'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than',
+                'too', 'very', 's', 't', 'can', 'will', 'just', 'don', 'should', 'now', 'd', 'll', 'm', 'o', 're', 
+                've', 'y', 'ain', 'aren', 'couldn', 'didn', 'doesn', 'hadn', 'hasn', 'haven', 'isn', 'ma', 'mightn', 
+                'mustn', 'needn', 'shan', 'shouldn', 'wasn', 'weren', 'won', 'wouldn',
+                '&','brand new','new','[rm]','free ship.*?',
+                'rm','price firm','no description yet'               
+                ])
+              
+    pattern = re.compile(r'\b(' + r'|'.join(stopwords) + r')\b\s*')
+    train = pd.read_csv('./train.tsv/train_small.tsv', sep="\t",encoding='utf-8',
+                        converters={'item_description':lambda x:  pattern.sub('',x.lower()),
+                                'name':lambda x:  pattern.sub('',x.lower())}
+                    )
+    print("finished to load train file : {}".format(time.time()-start_time))
+    test = pd.read_csv('./test.tsv/test_small.tsv', sep="\t",encoding='utf-8',
+                        converters={'item_description':lambda x:  pattern.sub('',x.lower()),
+                                'name':lambda x:  pattern.sub('',x.lower())}
+                        )
+    print("finished to load test file : {}".format(time.time()-start_time))
+    train_label = np.log1p(train['price'])
+    train_texts = train['name'].tolist()
+    test_texts = test['name'].tolist()
+    handle_missing(train)
+    handle_missing(test)
+    handle_nm_word_len(train)
+    handle_nm_word_len(test)
+    handle_desc_word_len(train)
+    handle_desc_word_len(test)
+    handle_nm_len(train)
+    handle_nm_len(test)
+    handle_desc_len(train)
+    handle_desc_len(test)
+#    print(train.describe())
     nrow_train = train.shape[0]
-    y = np.log1p(train["price"])
-    merge = pd.DataFrame(pd.concat([train, test]))
-    submission = test[['test_id']]
-
-    del train
-    del test
-    gc.collect()
-
-
-
-
-
-
-
-#deal with missing
-    merge['category_name'].fillna(value='missing', inplace=True)
-    merge['brand_name'].fillna(value='missing', inplace=True)
-    merge['item_description'].fillna(value='missing', inplace=True)
-
-#leave 5000 brands
-    cut_brand(merge)
-
-#change to category
-    merge['category_name'] = merge['category_name'].astype('category')
-    merge['brand_name'] = merge['brand_name'].astype('category')
-    merge['item_condition_id'] = merge['item_condition_id'].astype('category')
-
-    cv = CountVectorizer(min_df=10)
-    X_name = cv.fit_transform(merge['name'])
-#    print(cv.vocabulary_)
-
-    cv = CountVectorizer()
-    X_category = cv.fit_transform(merge['category_name'])
-
-    tv = TfidfVectorizer(max_features=35000,
-                         ngram_range=(1, 3),
-                         stop_words='english')
-    X_description = tv.fit_transform(merge['item_description'])
-
-    lb = LabelBinarizer(sparse_output=True)
-    X_brand = lb.fit_transform(merge['brand_name'])
-
-    X_dummies = csr_matrix(pd.get_dummies(merge[['item_condition_id', 'shipping']],
-                                          sparse=True).values)
-
-    sparse_merge = hstack((X_dummies, X_description, X_brand, X_category, X_name)).tocsr()
-
-    X = sparse_merge[:nrow_train]
-    X_test = sparse_merge[nrow_train:]
+    test_id=test['test_id']
+    handle_category(train)
+    handle_category(test)
     
-    d_train = lgb.Dataset(X, label=y)
     
-    params = {
-        'learning_rate': 0.75,
-        'application': 'regression',
-        'max_depth': 3,
-        'num_leaves': 100,
-        'verbosity': -1,
-        'metric': 'RMSE',
-    }
-
-
-    model = lgb.train(params, train_set=d_train, num_boost_round=3335,  \
-    verbose_eval=100) 
-    preds = 0.6*model.predict(X_test)
-
-    model = Ridge(solver="sag", fit_intercept=True, random_state=205)
-    model.fit(X, y)
-    print('[{}] Finished to train ridge'.format(time.time() - start_time))
-    preds += 0.4*model.predict(X=X_test)
-    print('[{}] Finished to predict ridge'.format(time.time() - start_time))
-
-
-    submission['price'] = np.expm1(preds)
-    submission.to_csv("submission_lgbm.csv", index=False)
-
-
 if __name__ == '__main__':
     main()
