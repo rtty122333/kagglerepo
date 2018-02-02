@@ -14,6 +14,9 @@ import re
 import collections
 import gc
 
+NAME_MIN_DF=30
+MAX_FEATURES_ITEM_DESCRIPTION=20000
+
 def split_cat(text):
     try:
         cat_nm=text.split("/")
@@ -42,6 +45,13 @@ def handle_desc_word_len(dataset):
 def handle_desc_len(dataset):
     dataset['desc_len']=list(map(lambda x: len(x), dataset['item_description'].tolist()))
 
+def handle_laberencoder(train,test,label):
+    for item in label:
+        newlist = train[item].append(test[item])
+        le = LabelEncoder()
+        le.fit(newlist)
+        train[item] = le.transform(train[item])
+        test[item] = le.transform(test[item])
     
 def handle_category(dataset):
     dataset['subcat_0'], dataset['subcat_1'], dataset['subcat_2'] = \
@@ -96,6 +106,17 @@ def main():
     test_id=test['test_id']
     handle_category(train)
     handle_category(test)
+    count = CountVectorizer(min_df=NAME_MIN_DF)
+    X_name_mix = count.fit_transform(train['name'].append(test['name']))
+    X_name=X_name_mix[:nrow_train]
+    X_t_name = X_name_mix[nrow_train:]
+    tv = TfidfVectorizer(max_features=MAX_FEATURES_ITEM_DESCRIPTION,ngram_range=(1,3))
+    X_description_mix = tv.fit_transform(train['item_description'].append(test['item_description']))
+    X_description=X_description_mix[:nrow_train]
+    X_t_description = X_description_mix[nrow_train:]
+ #handle label encoder
+    cat_features=['subcat_2','subcat_1','subcat_0','brand_name','category_name','item_condition_id','shipping']
+    handle_laberencoder(train,test,cat_features)
     
     
 if __name__ == '__main__':
