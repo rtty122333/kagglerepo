@@ -16,6 +16,7 @@ import gc
 
 NAME_MIN_DF=30
 MAX_FEATURES_ITEM_DESCRIPTION=20000
+NFOLDS = 4
 
 def split_cat(text):
     try:
@@ -52,6 +53,13 @@ def handle_laberencoder(train,test,label):
         le.fit(newlist)
         train[item] = le.transform(train[item])
         test[item] = le.transform(test[item])
+
+def handle_onehot(train,test,label):
+    encoder = OneHotEncoder()
+    encoder.fit(train[label].append(test[label]))
+    X_cat = encoder.transform(train[label])
+    X_test_cat = encoder.transform(test[label])
+    return X_cat,X_test_cat
     
 def handle_category(dataset):
     dataset['subcat_0'], dataset['subcat_1'], dataset['subcat_2'] = \
@@ -78,12 +86,12 @@ def main():
                 ])
               
     pattern = re.compile(r'\b(' + r'|'.join(stopwords) + r')\b\s*')
-    train = pd.read_csv('./train.tsv/train_small.tsv', sep="\t",encoding='utf-8',
+    train = pd.read_csv('./train.tsv/train.tsv', sep="\t",encoding='utf-8',
                         converters={'item_description':lambda x:  pattern.sub('',x.lower()),
                                 'name':lambda x:  pattern.sub('',x.lower())}
                     )
     print("finished to load train file : {}".format(time.time()-start_time))
-    test = pd.read_csv('./test.tsv/test_small.tsv', sep="\t",encoding='utf-8',
+    test = pd.read_csv('./test.tsv/test.tsv', sep="\t",encoding='utf-8',
                         converters={'item_description':lambda x:  pattern.sub('',x.lower()),
                                 'name':lambda x:  pattern.sub('',x.lower())}
                         )
@@ -102,8 +110,7 @@ def main():
     handle_desc_len(train)
     handle_desc_len(test)
 #    print(train.describe())
-    nrow_train = train.shape[0]
-    test_id=test['test_id']
+    nrow_train = train.shape[0] 
     handle_category(train)
     handle_category(test)
     count = CountVectorizer(min_df=NAME_MIN_DF)
@@ -117,7 +124,59 @@ def main():
  #handle label encoder
     cat_features=['subcat_2','subcat_1','subcat_0','brand_name','category_name','item_condition_id','shipping']
     handle_laberencoder(train,test,cat_features)
+    X_cat,X_test_cat = handle_onehot(train,test,cat_features)
+#   print(train.describe()) 
+    print("finished to label encoder : {}".format(time.time()-start_time))
     
+    train_feature=['desc_word_len','nm_word_len','desc_len','nm_len']
+    train_list = [train[train_feature].values,X_description,X_name,X_cat]
+    test_list = [test[train_feature].values,X_t_description,X_t_name,X_test_cat]
+    X = ssp.hstack(train_list).tocsr()
+    X_test = ssp.hstack(test_list).tocsr()
+    print("finished to handle features : {}".format(time.time()-start_time))
+    
+    kfold =KFold(n_splits=NFOLDS, shuffle=True, random_state=128)
+    
+    learning_rate = 0.8
+    num_leaves =128
+    min_data_in_leaf = 1000
+    feature_fraction = 0.5
+    bagging_fraction=0.9
+    bagging_freq=1000
+    num_boost_round = 1000
+    params = {"objective": "regression",
+            "boosting_type": "gbdt",
+            "learning_rate": learning_rate,
+            "num_leaves": num_leaves,
+            "feature_fraction": feature_fraction, 
+            "bagging_freq": bagging_freq,
+            "bagging_fraction": bagging_fraction,
+            "verbosity": 0,
+            "metric": "l2_root",
+            "nthread": 4,
+            "subsample": 0.9
+            }
+            
+    test_id=test['test_id']
+    cv_pred = np.zeros(len(test_id))
+    
+    kf = kfold.split(X)
+    for i, (train_fold, test_fold) in enumerate(kf):
+        train_t0 = time.time()
+        X_train, X_validate, label_train, label_validate = \
+                X[train_fold, :], X[test_fold, :], train_label[train_fold], train_label[test_fold]
+        dtrain = lgbm.Dataset(X_train, label_train)
+        dvalid = lgbm.Dataset(X_validate, label_validate, reference=dtrain)
+        bst = lgbm.train(params, dtrain, num_boost_round, valid_sets=dvalid, verbose_eval=100,early_stopping_rounds=100)
+        cv_pred += bst.predict(X_test, num_iteration=bst.best_iteration)
+        print ('training & predict time',time.time()-train_t0)
+        gc.collect()
+    cv_pred /= NFOLDS
+    cv_pred = np.expm1(cv_pred)
+    submission = test[["test_id"]]
+    submission["price"] = cv_pred
+    submission.to_csv("./submission.csv", index=False)
+    print ('done',time.time()-start_time)
     
 if __name__ == '__main__':
     main()
