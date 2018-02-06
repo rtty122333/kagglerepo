@@ -14,8 +14,8 @@ import re
 import collections
 import gc
 
-NAME_MIN_DF=30
-MAX_FEATURES_ITEM_DESCRIPTION=20000
+NAME_MIN_DF=10
+MAX_FEATURES_ITEM_DESCRIPTION=3000
 NFOLDS = 4
 
 def split_cat(text):
@@ -86,21 +86,23 @@ def main():
                 ])
               
     pattern = re.compile(r'\b(' + r'|'.join(stopwords) + r')\b\s*')
-    train = pd.read_csv('./train.tsv/train.tsv', sep="\t",encoding='utf-8',
+    train = pd.read_csv('../input/train.tsv', sep="\t",encoding='utf-8',
                         converters={'item_description':lambda x:  pattern.sub('',x.lower()),
                                 'name':lambda x:  pattern.sub('',x.lower())}
                     )
     print("finished to load train file : {}".format(time.time()-start_time))
-    test = pd.read_csv('./test.tsv/test.tsv', sep="\t",encoding='utf-8',
+    test = pd.read_csv('../input/test.tsv', sep="\t",encoding='utf-8',
                         converters={'item_description':lambda x:  pattern.sub('',x.lower()),
                                 'name':lambda x:  pattern.sub('',x.lower())}
                         )
     print("finished to load test file : {}".format(time.time()-start_time))
     train_label = np.log1p(train['price'])
+    print("finished to log price : {}".format(time.time()-start_time))
     train_texts = train['name'].tolist()
     test_texts = test['name'].tolist()
     handle_missing(train)
     handle_missing(test)
+    print("finished to handle missing : {}".format(time.time()-start_time))
     handle_nm_word_len(train)
     handle_nm_word_len(test)
     handle_desc_word_len(train)
@@ -109,18 +111,22 @@ def main():
     handle_nm_len(test)
     handle_desc_len(train)
     handle_desc_len(test)
+    print("finished to handle len : {}".format(time.time()-start_time))
 #    print(train.describe())
     nrow_train = train.shape[0] 
     handle_category(train)
     handle_category(test)
+    print("finished to handle category : {}".format(time.time()-start_time))
     count = CountVectorizer(min_df=NAME_MIN_DF)
     X_name_mix = count.fit_transform(train['name'].append(test['name']))
     X_name=X_name_mix[:nrow_train]
     X_t_name = X_name_mix[nrow_train:]
-    tv = TfidfVectorizer(max_features=MAX_FEATURES_ITEM_DESCRIPTION,ngram_range=(1,3))
+    tv = TfidfVectorizer(max_features=MAX_FEATURES_ITEM_DESCRIPTION,ngram_range=(1,3),stop_words='english')
     X_description_mix = tv.fit_transform(train['item_description'].append(test['item_description']))
+    print("finished to handle tfidf : {}".format(time.time()-start_time))
     X_description=X_description_mix[:nrow_train]
     X_t_description = X_description_mix[nrow_train:]
+    print("finished to handle description : {}".format(time.time()-start_time))
  #handle label encoder
     cat_features=['subcat_2','subcat_1','subcat_0','brand_name','category_name','item_condition_id','shipping']
     handle_laberencoder(train,test,cat_features)
