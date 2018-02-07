@@ -122,6 +122,7 @@ def main():
     X_name=X_name_mix[:nrow_train]
     X_t_name = X_name_mix[nrow_train:]
     tv = TfidfVectorizer(max_features=MAX_FEATURES_ITEM_DESCRIPTION,ngram_range=(1,3),stop_words='english')
+    gc.collect()
     X_description_mix = tv.fit_transform(train['item_description'].append(test['item_description']))
     print("finished to handle tfidf : {}".format(time.time()-start_time))
     X_description=X_description_mix[:nrow_train]
@@ -168,14 +169,16 @@ def main():
     
     kf = kfold.split(X)
     for i, (train_fold, test_fold) in enumerate(kf):
-        train_t0 = time.time()
         X_train, X_validate, label_train, label_validate = \
                 X[train_fold, :], X[test_fold, :], train_label[train_fold], train_label[test_fold]
         dtrain = lgbm.Dataset(X_train, label_train)
+        print ('dtrain time: {}'.format(time.time()-start_time))
         dvalid = lgbm.Dataset(X_validate, label_validate, reference=dtrain)
+        print ('dvalid time: {}'.format(time.time()-start_time))
         bst = lgbm.train(params, dtrain, num_boost_round, valid_sets=dvalid, verbose_eval=100,early_stopping_rounds=100)
+        print ('train time: {}'.format(time.time()-start_time))
         cv_pred += bst.predict(X_test, num_iteration=bst.best_iteration)
-        print ('training & predict time',time.time()-train_t0)
+        print ('predict time',time.time()-start_time)
         gc.collect()
     cv_pred /= NFOLDS
     cv_pred = np.expm1(cv_pred)
